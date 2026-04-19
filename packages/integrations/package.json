@@ -1,0 +1,14 @@
+{
+  "name": "@agentic-room/integrations",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --clean"
+  },
+  "dependencies": {
+    "@agentic-room/ledger": "workspace:*"
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "declaration": true,
+    "declarationMap": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "forceConsistentCasingInFileNames": true,
+    "baseUrl": ".",
+    "paths": {
+      "@agentic-room/auth": ["packages/auth/src/index.ts"],
+      "@agentic-room/contracts": ["packages/contracts/src/index.ts"],
+      "@agentic-room/db": ["packages/db/src/index.ts"],
+      "@agentic-room/domain": ["packages/domain/src/index.ts"],
+      "@agentic-room/integrations": ["packages/integrations/src/index.ts"],
+      "@agentic-room/ledger": ["packages/ledger/src/index.ts"],
+      "@agentic-room/observability": ["packages/observability/src/index.ts"],
+      "@agentic-room/settlement": ["packages/settlement/src/index.ts"],
+      "@agentic-room/testkit": ["packages/testkit/src/index.ts"],
+      "@agentic-room/ui": ["packages/ui/src/index.ts"]
+    }
+  }
+}

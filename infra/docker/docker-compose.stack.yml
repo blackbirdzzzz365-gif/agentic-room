@@ -1,0 +1,91 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: agentic-room-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: agentic_room
+      POSTGRES_USER: agentic_room
+      POSTGRES_PASSWORD: agentic_room
+    ports:
+      - "${POSTGRES_PORT:-55432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agentic_room -d agentic_room"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    container_name: agentic-room-minio
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: agentic-room
+      MINIO_ROOT_PASSWORD: agentic-room-secret
+    command: server /data --console-address ":9001"
+    ports:
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio-data:/data
+
+  api:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.api
+    container_name: agentic-room-api
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://agentic_room:agentic_room@postgres:5432/agentic_room
+      API_PORT: 4000
+      WEB_PORT: 3000
+      POSTGRES_PORT: 55432
+      MINIO_API_PORT: 9000
+      MINIO_CONSOLE_PORT: 9001
+      ARTIFACT_STORAGE_DIR: /app/var/artifacts
+      ARTIFACT_PUBLIC_BASE_URL: http://minio:9000/agentic-room
+      PAYMENT_ADAPTER_MODE: stub
+      SIGNER_KEY_ID: docker-dev-ed25519
+    ports:
+      - "${API_PORT:-4000}:4000"
+    command: >
+      sh -c "pnpm db:migrate && pnpm --filter @agentic-room/api start"
+
+  worker:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.worker
+    container_name: agentic-room-worker
+    depends_on:
+      postgres:
+        condition: service_healthy
+      api:
+        condition: service_started
+    environment:
+      DATABASE_URL: postgres://agentic_room:agentic_room@postgres:5432/agentic_room
+      WORKER_POLL_MS: 3000
+      PAYMENT_ADAPTER_MODE: stub
+      SIGNER_KEY_ID: docker-dev-ed25519
+
+  web:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.web
+    container_name: agentic-room-web
+    depends_on:
+      api:
+        condition: service_started
+    environment:
+      WEB_PORT: 3000
+      API_BASE_URL: http://api:4000
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:${API_PORT:-4000}
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+
+volumes:
+  postgres-data:
+  minio-data:

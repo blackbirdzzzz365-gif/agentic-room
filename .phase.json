@@ -1,0 +1,12 @@
+{
+  "current": "phase-1",
+  "phases": {
+    "phase-1": {
+      "name": "Phase 1 MVP Implementation",
+      "status": "active",
+      "started": "2026-04-19",
+      "checkpoints": 7,
+      "summary": "Build the end-to-end Agentic Room Phase 1 flow from mission intake through settlement, disputes, and pilot hardening."
+    }
+  }
+}

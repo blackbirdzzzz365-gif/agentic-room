@@ -1,0 +1,57 @@
+services:
+  api:
+    image: ${API_IMAGE:-agentic-room-api:local}
+    restart: unless-stopped
+    env_file:
+      - ${APP_ENV_FILE:-deploy/production/app.env}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: >
+      sh -c "pnpm db:migrate && pnpm --filter @agentic-room/api start"
+
+  worker:
+    image: ${WORKER_IMAGE:-agentic-room-worker:local}
+    restart: unless-stopped
+    env_file:
+      - ${APP_ENV_FILE:-deploy/production/app.env}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  web:
+    image: ${WEB_IMAGE:-agentic-room-web:local}
+    restart: unless-stopped
+    env_file:
+      - ${APP_ENV_FILE:-deploy/production/app.env}
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    depends_on:
+      api:
+        condition: service_started
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    env_file:
+      - ${APP_ENV_FILE:-deploy/production/app.env}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-agentic_room} -d ${POSTGRES_DB:-agentic_room}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    env_file:
+      - ${APP_ENV_FILE:-deploy/production/app.env}
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio-data:/data
+
+volumes:
+  postgres-data:
+  minio-data:

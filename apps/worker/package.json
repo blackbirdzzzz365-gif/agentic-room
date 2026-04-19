@@ -1,0 +1,16 @@
+{
+  "name": "@agentic-room/worker",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsup src/index.ts --format esm --clean",
+    "start": "node dist/index.mjs"
+  },
+  "dependencies": {
+    "@agentic-room/db": "workspace:*",
+    "@agentic-room/ledger": "workspace:*",
+    "@agentic-room/observability": "workspace:*",
+    "dotenv": "^17.2.3"
+  }
+}
