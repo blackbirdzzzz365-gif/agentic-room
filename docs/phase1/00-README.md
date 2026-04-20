@@ -39,6 +39,7 @@ This package answers five questions:
 | 03 | [Solution Architecture](03-solution-architecture.md) | Runtime topology, module ownership, tech choices |
 | 04 | [System Design](04-system-design.md) | Data model, state machines, APIs, jobs, algorithms |
 | 05 | [Development Organization](05-development-organization.md) | Repo shape, implementation sequence, delivery operating model |
+| 06 | [Current Codebase Baseline](06-current-codebase-baseline.md) | What the current codebase actually delivers today for local testing |
 | CP | [Implementation Checkpoints](../phases/phase-1/checkpoints/README.md) | Step-by-step execution plan for implementation agents |
 
 ## Recommended Reading Order
@@ -48,7 +49,8 @@ This package answers five questions:
 3. Read [03-solution-architecture.md](03-solution-architecture.md) to understand the runtime shape.
 4. Read [04-system-design.md](04-system-design.md) to understand exact implementation mechanics.
 5. Read [05-development-organization.md](05-development-organization.md) to understand repo structure, sequencing, and delivery checkpoints.
-6. Execute [the checkpoint breakdown](../phases/phase-1/checkpoints/README.md) in order if you are building the product.
+6. Read [06-current-codebase-baseline.md](06-current-codebase-baseline.md) if you need the current runtime truth instead of the original target design.
+7. Execute [the checkpoint breakdown](../phases/phase-1/checkpoints/README.md) in order if you are building the product.
 
 ## Source Lineage
 

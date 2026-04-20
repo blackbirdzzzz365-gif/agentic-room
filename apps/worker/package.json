@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@agentic-room/db": "workspace:*",
+    "@agentic-room/domain": "workspace:*",
     "@agentic-room/ledger": "workspace:*",
     "@agentic-room/observability": "workspace:*",
     "dotenv": "^17.2.3"

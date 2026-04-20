@@ -1,103 +1,197 @@
 import Link from "next/link";
+import {
+  BoltIcon,
+  ScaleIcon,
+  ShieldAlertIcon,
+  CpuIcon,
+  HomeIcon,
+  BriefcaseIcon,
+} from "lucide-react";
 
-const links = [
-  { href: "/rooms", label: "Rooms" },
-  { href: "/admin", label: "Admin" },
-  { href: "/docs", label: "Docs" }
+import { fetchJson } from "@/lib/api";
+import type { AdminRoom, Job, AdminDispute, Metrics } from "@/types";
+import KpiCard from "@/components/shared/kpi-card";
+import TokenText from "@/components/shared/token-text";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+
+// ─── Data ─────────────────────────────────────────────────────────────────────
+
+interface AdminRoomsPayload {
+  rooms: AdminRoom[];
+}
+
+interface AdminJobsPayload {
+  jobs: Job[];
+}
+
+interface AdminDisputesPayload {
+  disputes: AdminDispute[];
+}
+
+// ─── Feature config ───────────────────────────────────────────────────────────
+
+const FEATURE_PILLS = [
+  "Mission Intake",
+  "Charter Signing",
+  "Task Review",
+  "Settlement Voting",
+  "Dispute Resolution",
+  "Ledger Replay",
 ];
 
-export default function HomePage() {
+const FEATURE_CARDS = [
+  {
+    icon: <BoltIcon />,
+    title: "Event-Sourced",
+    description:
+      "Every room action is stored as an immutable event. Full replay and audit from genesis.",
+  },
+  {
+    icon: <ScaleIcon />,
+    title: "Consensus Settlement",
+    description:
+      "Configurable quorum and vote ratios ensure fair economic outcomes.",
+  },
+  {
+    icon: <ShieldAlertIcon />,
+    title: "Dispute Resolution",
+    description:
+      "Cooling-off periods, panel assignment, and escalation paths built in.",
+  },
+  {
+    icon: <CpuIcon />,
+    title: "Worker Automation",
+    description:
+      "Background jobs handle timeouts, transitions, and panel escalations automatically.",
+  },
+];
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
+
+export default async function HomePage() {
+  const [roomsPayload, jobsPayload, disputesPayload, metrics] =
+    await Promise.all([
+      fetchJson<AdminRoomsPayload>("/api/admin/rooms"),
+      fetchJson<AdminJobsPayload>("/api/admin/jobs"),
+      fetchJson<AdminDisputesPayload>("/api/admin/disputes"),
+      fetchJson<Metrics>("/api/admin/metrics"),
+    ]);
+
+  const rooms = roomsPayload?.rooms ?? [];
+  const jobs = jobsPayload?.jobs ?? [];
+  const disputes = disputesPayload?.disputes ?? [];
+
+  const activeRooms = rooms.filter((r) => r.status === "ACTIVE").length;
+  const pendingJobs = jobs.filter((j) => j.status !== "DONE").length;
+  const openDisputes = disputes.filter((d) => d.status !== "RESOLVED").length;
+  const totalRooms = rooms.length;
+
   return (
-    <main style={{ padding: "4rem 2rem" }}>
-      <section
-        style={{
-          maxWidth: 1100,
-          margin: "0 auto",
-          padding: "2.5rem",
-          borderRadius: 28,
-          background: "rgba(255, 249, 240, 0.72)",
-          boxShadow: "0 28px 80px rgba(31, 26, 20, 0.08)",
-          border: "1px solid rgba(31, 26, 20, 0.08)"
-        }}
-      >
-        <p style={{ textTransform: "uppercase", letterSpacing: "0.18em", fontSize: 12, margin: 0 }}>
-          Agentic Room Phase 1
-        </p>
-        <h1 style={{ fontSize: "3.4rem", lineHeight: 1.05, maxWidth: 700, marginBottom: "1rem" }}>
-          Auditable room lifecycle for multi-agent work.
-        </h1>
-        <p style={{ fontSize: "1.05rem", lineHeight: 1.7, maxWidth: 760, marginBottom: "1.75rem" }}>
-          The current build now exposes the Phase 1 lifecycle through a real Fastify API, a worker
-          loop for timeouts and dispute jobs, and a minimal operator-facing web shell. Use the
-          rooms and admin views to inspect mission confirmation, charter signing, task delivery,
-          settlement, and dispute handling.
-        </p>
-        <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", marginBottom: "1.5rem" }}>
-          {["Mission intake", "Charter signing", "Task review", "Settlement", "Disputes", "Replay"].map(
-            (label) => (
-              <span
-                key={label}
-                style={{
-                  padding: "0.5rem 0.85rem",
-                  borderRadius: 999,
-                  background: "#f1dfbf",
-                  fontSize: 14,
-                  fontWeight: 600
-                }}
-              >
-                {label}
-              </span>
-            )
-          )}
+    <main className="min-h-screen bg-background">
+      {/* ── Hero ─────────────────────────────────────────────────────────── */}
+      <section className="relative border-b border-border/40 bg-gradient-to-b from-muted/30 to-background px-6 py-20 text-center dark:from-muted/10">
+        <div className="mx-auto max-w-4xl">
+          <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-amber-600 dark:text-amber-400">
+            Agentic Room Platform
+          </p>
+
+          <h1 className="mb-5 text-4xl font-bold leading-tight tracking-tight text-foreground sm:text-5xl lg:text-6xl">
+            <TokenText
+              text="Multi-agent collaboration, end-to-end"
+              speed={18}
+              className="block"
+            />
+          </h1>
+
+          <p className="mx-auto mb-8 max-w-2xl text-base leading-relaxed text-muted-foreground sm:text-lg">
+            Coordinate missions, sign charters, execute tasks, settle fairly.
+            Every action is audited and replayable.
+          </p>
+
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            <Button asChild size="lg">
+              <Link href="/rooms">View Rooms</Link>
+            </Button>
+            <Button asChild variant="outline" size="lg">
+              <Link href="/admin">Admin Console</Link>
+            </Button>
+          </div>
         </div>
-        <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
-          {links.map((link) => (
-            <Link
-              key={link.href}
-              href={link.href}
-              style={{
-                padding: "0.95rem 1.25rem",
-                borderRadius: 999,
-                background: "#1f1a14",
-                color: "#fff9f0",
-                textDecoration: "none",
-                fontWeight: 600
-              }}
+      </section>
+
+      {/* ── KPI Row ──────────────────────────────────────────────────────── */}
+      <section className="mx-auto max-w-6xl px-6 py-10">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          <KpiCard
+            title="Active Rooms"
+            value={activeRooms}
+            icon={<HomeIcon />}
+            color="green"
+            trend="neutral"
+          />
+          <KpiCard
+            title="Pending Jobs"
+            value={pendingJobs}
+            icon={<BriefcaseIcon />}
+            color="amber"
+            trend="neutral"
+          />
+          <KpiCard
+            title="Open Disputes"
+            value={openDisputes}
+            icon={<ShieldAlertIcon />}
+            color={openDisputes > 0 ? "red" : "default"}
+            trend="neutral"
+          />
+          <KpiCard
+            title="Rooms Total"
+            value={totalRooms}
+            icon={<CpuIcon />}
+            color="blue"
+            trend="neutral"
+            description={
+              metrics?.roomsTotal !== undefined
+                ? `${metrics.roomsTotal} tracked`
+                : undefined
+            }
+          />
+        </div>
+      </section>
+
+      {/* ── Feature pills ────────────────────────────────────────────────── */}
+      <section className="mx-auto max-w-6xl px-6 pb-8">
+        <div className="flex flex-wrap gap-2">
+          {FEATURE_PILLS.map((label) => (
+            <span
+              key={label}
+              className="rounded-full bg-amber-100 px-3.5 py-1.5 text-sm font-semibold text-amber-800 dark:bg-amber-900/30 dark:text-amber-300"
             >
-              {link.label}
-            </Link>
+              {label}
+            </span>
           ))}
         </div>
       </section>
 
-      <section
-        style={{
-          maxWidth: 1100,
-          margin: "1.5rem auto 0",
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-          gap: "1rem"
-        }}
-      >
-        {[
-          ["Control surface", "Fastify routes for room formation, chartering, settlement, disputes, and admin actions."],
-          ["Ledger replay", "Room snapshots can be rebuilt and verified from the append-only event chain."],
-          ["Worker automation", "Timeouts, cooling-off transitions, and panel escalations are queued and processed."],
-          ["Docker-first path", "Infra stays on Docker Compose so local and future deploy packaging can share one shape."]
-        ].map(([title, body]) => (
-          <article
-            key={title}
-            style={{
-              borderRadius: 22,
-              padding: "1.25rem",
-              background: "rgba(255, 255, 255, 0.65)",
-              border: "1px solid rgba(31, 26, 20, 0.08)"
-            }}
-          >
-            <h2 style={{ marginTop: 0, marginBottom: "0.5rem" }}>{title}</h2>
-            <p style={{ margin: 0, lineHeight: 1.6 }}>{body}</p>
-          </article>
-        ))}
+      {/* ── Feature cards ────────────────────────────────────────────────── */}
+      <section className="mx-auto max-w-6xl px-6 pb-20">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          {FEATURE_CARDS.map(({ icon, title, description }) => (
+            <Card key={title} className="bg-card/70 backdrop-blur-sm dark:bg-card/40">
+              <CardHeader className="pb-2">
+                <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary [&>svg]:h-5 [&>svg]:w-5">
+                  {icon}
+                </div>
+                <CardTitle className="text-base font-semibold">{title}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm leading-relaxed text-muted-foreground">
+                  {description}
+                </p>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
       </section>
     </main>
   );

@@ -1,98 +1,102 @@
 import Link from "next/link";
-import { fetchJson } from "../../lib/api";
+import { Users2 } from "lucide-react";
 
-type RoomSummary = {
-  id: string;
-  name: string;
-  status: string;
-  phase: string;
-  memberCount: number;
-  taskCount: number;
-  disputeCount: number;
-  updatedAt: string;
-};
+import { fetchJson } from "@/lib/api";
+import type { RoomSummary } from "@/types";
+import RoomCard from "@/components/shared/room-card";
+import EmptyState from "@/components/shared/empty-state";
+import { Button } from "@/components/ui/button";
+
+// ─── Data ─────────────────────────────────────────────────────────────────────
+
+interface RoomsPayload {
+  rooms: RoomSummary[];
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default async function RoomsPage() {
-  const payload = await fetchJson<{ rooms: RoomSummary[] }>("/api/rooms");
+  const payload = await fetchJson<RoomsPayload>("/api/rooms");
   const rooms = payload?.rooms ?? [];
 
-  return (
-    <main style={{ padding: "2rem", maxWidth: 1100, margin: "0 auto" }}>
-      <header style={{ marginBottom: "1.5rem" }}>
-        <p style={{ textTransform: "uppercase", letterSpacing: "0.14em", fontSize: 12, marginBottom: 8 }}>
-          Room Workbench
-        </p>
-        <h1 style={{ margin: 0, fontSize: "2.4rem" }}>Rooms</h1>
-        <p style={{ lineHeight: 1.7, maxWidth: 760 }}>
-          Inspect mission state, charter progress, execution, settlement, and disputes for each room.
-          When the API is offline, this page degrades cleanly instead of failing the whole build.
-        </p>
-      </header>
+  const activeCount = rooms.filter((r) => r.status === "ACTIVE").length;
+  const settledCount = rooms.filter((r) => r.status === "SETTLED").length;
 
-      {rooms.length === 0 ? (
-        <section
-          style={{
-            padding: "1.25rem",
-            borderRadius: 20,
-            background: "rgba(255, 255, 255, 0.72)",
-            border: "1px solid rgba(31, 26, 20, 0.08)"
-          }}
-        >
-          <p style={{ margin: 0 }}>No room data available yet, or the API is not reachable.</p>
-        </section>
-      ) : (
-        <section
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
-            gap: "1rem"
-          }}
-        >
-          {rooms.map((room) => (
-            <Link
-              key={room.id}
-              href={`/rooms/${room.id}`}
-              style={{
-                textDecoration: "none",
-                borderRadius: 22,
-                padding: "1.25rem",
-                background: "rgba(255, 255, 255, 0.75)",
-                border: "1px solid rgba(31, 26, 20, 0.08)",
-                display: "block"
-              }}
-            >
-              <div style={{ display: "flex", justifyContent: "space-between", gap: "0.5rem", marginBottom: "0.75rem" }}>
-                <strong style={{ fontSize: "1.05rem" }}>{room.name}</strong>
-                <span style={{ fontSize: 12, textTransform: "uppercase" }}>Phase {room.phase}</span>
-              </div>
-              <p style={{ marginTop: 0, marginBottom: "1rem", color: "#5c5144" }}>{room.id}</p>
-              <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginBottom: "0.85rem" }}>
-                {[
-                  `Status: ${room.status}`,
-                  `${room.memberCount} members`,
-                  `${room.taskCount} tasks`,
-                  `${room.disputeCount} disputes`
-                ].map((chip) => (
-                  <span
-                    key={chip}
-                    style={{
-                      padding: "0.35rem 0.65rem",
-                      borderRadius: 999,
-                      background: "#f4e7cc",
-                      fontSize: 13
-                    }}
-                  >
-                    {chip}
-                  </span>
-                ))}
-              </div>
-              <p style={{ margin: 0, fontSize: 13, color: "#6c6254" }}>
-                Updated {new Date(room.updatedAt).toLocaleString()}
-              </p>
-            </Link>
-          ))}
-        </section>
-      )}
+  return (
+    <main className="min-h-screen bg-background px-6 py-10">
+      <div className="mx-auto max-w-6xl">
+        {/* ── Header ─────────────────────────────────────────────────────── */}
+        <header className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <p className="mb-1 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+              Room Workbench
+            </p>
+            <h1 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
+              Rooms
+            </h1>
+            <p className="mt-2 max-w-xl text-sm leading-relaxed text-muted-foreground">
+              Inspect mission state, charter progress, execution, settlement,
+              and disputes for each collaboration room.
+            </p>
+          </div>
+
+          <div className="shrink-0">
+            <Button asChild>
+              <Link href="/rooms/new">Create Room</Link>
+            </Button>
+          </div>
+        </header>
+
+        {/* ── Stats bar ──────────────────────────────────────────────────── */}
+        {rooms.length > 0 && (
+          <div className="mb-6 flex flex-wrap gap-x-6 gap-y-1 rounded-xl border border-border/50 bg-muted/40 px-5 py-3 text-sm text-muted-foreground">
+            <span>
+              <span className="font-semibold tabular-nums text-foreground">
+                {rooms.length}
+              </span>{" "}
+              total
+            </span>
+            <span>
+              <span className="font-semibold tabular-nums text-green-600 dark:text-green-400">
+                {activeCount}
+              </span>{" "}
+              active
+            </span>
+            <span>
+              <span className="font-semibold tabular-nums text-purple-600 dark:text-purple-400">
+                {settledCount}
+              </span>{" "}
+              settled
+            </span>
+          </div>
+        )}
+
+        {/* ── Content ────────────────────────────────────────────────────── */}
+        {rooms.length === 0 ? (
+          <div className="rounded-2xl border border-border/50 bg-card/60">
+            <EmptyState
+              icon={<Users2 />}
+              title="No rooms yet"
+              description="Create a room to start coordinating missions, signing charters, and executing tasks with your agents."
+              action={
+                <Button asChild>
+                  <Link href="/rooms/new">Create First Room</Link>
+                </Button>
+              }
+            />
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {rooms.map((room) => (
+              <RoomCard
+                key={room.id}
+                room={room}
+                href={`/rooms/${room.id}`}
+              />
+            ))}
+          </div>
+        )}
+      </div>
     </main>
   );
 }
