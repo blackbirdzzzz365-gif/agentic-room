@@ -126,7 +126,11 @@ importers:
         specifier: ^8.16.3
         version: 8.20.0
 
-  packages/integrations: {}
+  packages/integrations:
+    dependencies:
+      '@agentic-room/ledger':
+        specifier: workspace:*
+        version: link:../ledger
 
   packages/ledger:
     dependencies:
