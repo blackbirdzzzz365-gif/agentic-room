@@ -1,1 +1,6 @@
-export const authCheckpoint = "cp0-environment-bootstrap";
+export function resolveActorFromKey(
+  apiKey: string,
+  keyMap: Record<string, string>
+): string | null {
+  return keyMap[apiKey] ?? null;
+}

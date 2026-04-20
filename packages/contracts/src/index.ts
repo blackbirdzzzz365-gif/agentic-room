@@ -154,8 +154,7 @@ export const charterDraftSchema = z.object({
     (value) => Object.keys(value).length > 0,
     "baseline split must not be empty"
   ),
-  bonusPoolPct: z.number().min(0).max(0.2),
-  malusPoolPct: z.number().min(0).max(0.1),
+  discretionaryPoolPct: z.number().min(0).max(0.1),
   consensusConfig: consensusConfigSchema,
   timeoutRules: timeoutRulesSchema
 });

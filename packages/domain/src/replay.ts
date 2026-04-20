@@ -222,26 +222,26 @@ export function replayRoomEvents(events: RoomEvent[]): RoomProjection {
         }
         break;
       }
-      case "TASK_ACCEPTED": {
-        const task = state.charter?.tasks[String(event.payload.taskId ?? "")];
-        if (task) {
-          task.status = "ACCEPTED";
-          task.reviewStatus = "ACCEPTED";
-          state.status = "ACTIVE";
-          state.phase = "2";
-        }
-        break;
-      }
+      case "TASK_ACCEPTED":
       case "TASK_REJECTED": {
-        const task = state.charter?.tasks[String(event.payload.taskId ?? "")];
-        if (task) {
-          // nextStatus is embedded in payload so the projection mirrors service logic exactly.
-          // If not present (older events), fall back to "REJECTED".
-          const nextStatus = (event.payload.nextStatus as TaskStatus | undefined) ?? "REJECTED";
-          task.status = nextStatus;
-          task.reviewStatus = "REJECTED";
-          state.status = "ACTIVE";
-          state.phase = "2";
+        const taskId = String(event.payload.taskId ?? "");
+        const current = state.charter?.tasks?.[taskId];
+        if (current) {
+          if (event.eventType === "TASK_ACCEPTED") {
+            current.status = "ACCEPTED";
+            current.reviewStatus = "ACCEPTED";
+          } else {
+            const nextStatus = (event.payload.nextStatus as TaskStatus | undefined) ?? "REJECTED";
+            current.status = nextStatus;
+            current.reviewStatus = "REJECTED";
+          }
+          // Only move room back to ACTIVE if no other tasks are still DELIVERED
+          const hasOtherDelivered = Object.values(state.charter?.tasks ?? {})
+            .some((t) => t.id !== taskId && t.status === "DELIVERED");
+          if (!hasOtherDelivered) {
+            state.status = "ACTIVE";
+            state.phase = "2";
+          }
         }
         break;
       }

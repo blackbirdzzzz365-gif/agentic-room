@@ -32,6 +32,8 @@ import { computeSettlement } from "@agentic-room/settlement";
 import { DomainError, InvariantError } from "./errors.js";
 import { replayRoomEvents } from "./replay.js";
 
+export type MutationResult = { ok: true; eventId: string; seq: number; roomId: string };
+
 type JsonValue = Record<string, unknown>;
 
 type RoomRow = {
@@ -376,17 +378,33 @@ async function ensureMissionConfirmed(client: PoolClient, roomId: string) {
   return mission;
 }
 
+async function assertActiveMember(client: PoolClient, roomId: string, actorId: string): Promise<void> {
+  const res = await client.query(
+    `SELECT 1 FROM room_members WHERE room_id = $1 AND member_id = $2 AND status = 'ACTIVE'`,
+    [roomId, actorId]
+  );
+  if ((res.rowCount ?? 0) === 0)
+    throw new DomainError("NOT_A_MEMBER", `${actorId} is not an active member of room ${roomId}`);
+}
+
+const EXECUTION_BLOCKING_STATUSES = ["COOLING_OFF", "OPEN", "PANEL_ASSIGNED", "UNDER_REVIEW"] as const;
+
+async function ensureNoBlockingDisputes(client: PoolClient, roomId: string) {
+  const res = await client.query(
+    `SELECT 1 FROM dispute_cases WHERE room_id = $1 AND status = ANY($2) LIMIT 1`,
+    [roomId, EXECUTION_BLOCKING_STATUSES]
+  );
+  if ((res.rowCount ?? 0) > 0)
+    throw new DomainError("OPEN_DISPUTE_EXISTS", "Room has an active dispute blocking execution");
+}
+
 async function ensureNoOpenDisputes(client: PoolClient, roomId: string) {
-  const result = await client.query<{ count: string }>(
-    `
-      SELECT COUNT(*)::text AS count
-      FROM dispute_cases
-      WHERE room_id = $1
-        AND status NOT IN ('RESOLVED')
-    `,
+  const res = await client.query(
+    `SELECT 1 FROM dispute_cases WHERE room_id = $1 AND status != 'RESOLVED' LIMIT 1`,
     [roomId]
   );
-  assert(Number(result.rows[0]?.count ?? 0) === 0, "Open disputes block this action");
+  if ((res.rowCount ?? 0) > 0)
+    throw new DomainError("OPEN_DISPUTE_EXISTS", "Room has an unresolved dispute");
 }
 
 function assertTaskWeights(tasks: CharterDraft["tasks"]) {
@@ -472,7 +490,7 @@ export async function createRoom(input: unknown) {
         executionDeadlineAt: command.executionDeadlineAt
       }
     });
-    await appendRoomEvent(client, {
+    const createRoomEvent = await appendRoomEvent(client, {
       roomId,
       eventType: "MEMBER_JOINED",
       actorId: command.actorId,
@@ -489,7 +507,7 @@ export async function createRoom(input: unknown) {
       payload: { roomId, actorId: command.actorId }
     });
 
-    return getRoomSnapshotById(client, roomId);
+    return { ok: true as const, eventId: createRoomEvent.id, seq: createRoomEvent.seq, roomId };
   });
 }
 
@@ -500,7 +518,7 @@ export async function draftMission(input: unknown) {
     await loadRoom(client, command.roomId);
     await upsertMission(client, command.roomId, command.rawInput, command.structured);
     await touchRoom(client, command.roomId, "FORMING", "0");
-    await appendRoomEvent(client, {
+    const draftMissionEvent = await appendRoomEvent(client, {
       roomId: command.roomId,
       eventType: "MISSION_DRAFTED",
       actorId: command.actorId,
@@ -509,7 +527,7 @@ export async function draftMission(input: unknown) {
         structured: command.structured
       }
     });
-    return getRoomSnapshotById(client, command.roomId);
+    return { ok: true as const, eventId: draftMissionEvent.id, seq: draftMissionEvent.seq, roomId: command.roomId };
   });
 }
 
@@ -520,7 +538,7 @@ export async function confirmMission(input: unknown) {
     await loadRoom(client, command.roomId);
     await upsertMission(client, command.roomId, command.rawInput, command.structured, now());
     await touchRoom(client, command.roomId, "PENDING_CHARTER", "1");
-    await appendRoomEvent(client, {
+    const confirmMissionEvent = await appendRoomEvent(client, {
       roomId: command.roomId,
       eventType: "MISSION_CONFIRMED",
       actorId: command.actorId,
@@ -529,7 +547,7 @@ export async function confirmMission(input: unknown) {
         structured: command.structured
       }
     });
-    return getRoomSnapshotById(client, command.roomId);
+    return { ok: true as const, eventId: confirmMissionEvent.id, seq: confirmMissionEvent.seq, roomId: command.roomId };
   });
 }
 
@@ -547,7 +565,7 @@ export async function inviteMember(input: unknown) {
       `,
       [command.roomId, command.memberId, command.identityRef, command.role]
     );
-    await appendRoomEvent(client, {
+    const inviteEvent = await appendRoomEvent(client, {
       roomId: command.roomId,
       eventType: "MEMBER_INVITED",
       actorId: command.actorId,
@@ -557,7 +575,7 @@ export async function inviteMember(input: unknown) {
         role: command.role
       }
     });
-    return getRoomSnapshotById(client, command.roomId);
+    return { ok: true as const, eventId: inviteEvent.id, seq: inviteEvent.seq, roomId: command.roomId };
   });
 }
 
@@ -582,7 +600,7 @@ async function updateMemberDecision(
     [input.roomId, input.memberId, status]
   );
 
-  await appendRoomEvent(client, {
+  return appendRoomEvent(client, {
     roomId: input.roomId,
     eventType,
     actorId: input.actorId,
@@ -596,8 +614,8 @@ export async function acceptMemberInvitation(input: unknown) {
   const command = memberDecisionCommandSchema.parse(input);
 
   return withClient(async (client) => {
-    await updateMemberDecision(client, command, "ACTIVE", "MEMBER_JOINED");
-    return getRoomSnapshotById(client, command.roomId);
+    const event = await updateMemberDecision(client, command, "ACTIVE", "MEMBER_JOINED");
+    return { ok: true as const, eventId: event.id, seq: event.seq, roomId: command.roomId };
   });
 }
 
@@ -605,8 +623,8 @@ export async function declineMemberInvitation(input: unknown) {
   const command = memberDecisionCommandSchema.parse(input);
 
   return withClient(async (client) => {
-    await updateMemberDecision(client, command, "DECLINED", "MEMBER_DECLINED");
-    return getRoomSnapshotById(client, command.roomId);
+    const event = await updateMemberDecision(client, command, "DECLINED", "MEMBER_DECLINED");
+    return { ok: true as const, eventId: event.id, seq: event.seq, roomId: command.roomId };
   });
 }
 
@@ -651,8 +669,8 @@ export async function createCharter(input: unknown) {
         command.roomId,
         nextVersion,
         JSON.stringify(command.draft.baselineSplit),
-        command.draft.bonusPoolPct,
-        command.draft.malusPoolPct,
+        command.draft.discretionaryPoolPct,
+        0,
         JSON.stringify(consensusConfig),
         JSON.stringify(timeoutRules),
         signDeadline.toISOString()
@@ -688,7 +706,7 @@ export async function createCharter(input: unknown) {
     );
     await touchRoom(client, command.roomId, "PENDING_CHARTER", "1");
 
-    await appendRoomEvent(client, {
+    const charterProposedEvent = await appendRoomEvent(client, {
       roomId: command.roomId,
       eventType: "CHARTER_PROPOSED",
       actorId: command.actorId,
@@ -697,8 +715,7 @@ export async function createCharter(input: unknown) {
         version: nextVersion,
         roomBudgetTotal: numeric(room.budget_total),
         baselineSplit: command.draft.baselineSplit,
-        bonusPoolPct: command.draft.bonusPoolPct,
-        malusPoolPct: command.draft.malusPoolPct,
+        discretionaryPoolPct: command.draft.discretionaryPoolPct,
         consensusConfig,
         timeoutRules,
         tasks: preparedTasks
@@ -716,7 +733,7 @@ export async function createCharter(input: unknown) {
       }
     });
 
-    return getRoomSnapshotById(client, command.roomId);
+    return { ok: true as const, eventId: charterProposedEvent.id, seq: charterProposedEvent.seq, roomId: command.roomId };
   });
 }
 
@@ -724,6 +741,7 @@ export async function signCharter(input: unknown) {
   const command = signCharterCommandSchema.parse(input);
 
   return withClient(async (client) => {
+    await assertActiveMember(client, command.roomId, command.actorId);
     await ensureMissionConfirmed(client, command.roomId);
     const charter = await loadLatestCharter(client, command.roomId);
     assert(charter?.id === command.charterId, "Can only sign the latest charter");
@@ -737,7 +755,7 @@ export async function signCharter(input: unknown) {
       `,
       [command.roomId, command.actorId]
     );
-    await appendRoomEvent(client, {
+    const signEvent = await appendRoomEvent(client, {
       roomId: command.roomId,
       eventType: "CHARTER_SIGNATURE_RECORDED",
       actorId: command.actorId,
@@ -748,7 +766,7 @@ export async function signCharter(input: unknown) {
     });
 
     await maybeFinalizeCharter(client, command.roomId, command.charterId, command.actorId);
-    return getRoomSnapshotById(client, command.roomId);
+    return { ok: true as const, eventId: signEvent.id, seq: signEvent.seq, roomId: command.roomId };
   });
 }
 
@@ -761,7 +779,7 @@ export async function declineCharter(input: unknown) {
 
     await client.query("UPDATE charters SET status = 'EXPIRED', updated_at = NOW() WHERE id = $1", [command.charterId]);
     await touchRoom(client, command.roomId, "PENDING_CHARTER", "1");
-    await appendRoomEvent(client, {
+    const declineEvent = await appendRoomEvent(client, {
       roomId: command.roomId,
       eventType: "CHARTER_DECLINED",
       actorId: command.actorId,
@@ -775,7 +793,7 @@ export async function declineCharter(input: unknown) {
       await markRoomFailed(client, command.roomId, command.actorId, "Charter declined after maximum rounds");
     }
 
-    return getRoomSnapshotById(client, command.roomId);
+    return { ok: true as const, eventId: declineEvent.id, seq: declineEvent.seq, roomId: command.roomId };
   });
 }
 
@@ -792,6 +810,8 @@ export async function claimTask(input: unknown) {
   const command = claimTaskCommandSchema.parse(input);
 
   return withClient(async (client) => {
+    await assertActiveMember(client, command.roomId, command.actorId);
+    await ensureNoBlockingDisputes(client, command.roomId);
     const room = await loadRoom(client, command.roomId);
     assert(room.status === "ACTIVE", "Room must be active before claiming tasks");
     const charter = await loadLatestCharter(client, command.roomId);
@@ -819,7 +839,7 @@ export async function claimTask(input: unknown) {
       `,
       [command.roomId, command.actorId, numeric(task.weight)]
     );
-    await appendRoomEvent(client, {
+    const claimEvent = await appendRoomEvent(client, {
       roomId: command.roomId,
       eventType: "TASK_CLAIMED",
       actorId: command.actorId,
@@ -835,7 +855,7 @@ export async function claimTask(input: unknown) {
       payload: { roomId: command.roomId, taskId: command.taskId, actorId: command.actorId }
     });
 
-    return getRoomSnapshotById(client, command.roomId);
+    return { ok: true as const, eventId: claimEvent.id, seq: claimEvent.seq, roomId: command.roomId };
   });
 }
 
@@ -867,14 +887,14 @@ export async function unclaimTask(input: { roomId: string; taskId: string; actor
       actorId: input.actorId,
       payload: { taskId: input.taskId }
     });
-    await appendRoomEvent(client, {
+    const requeueEvent = await appendRoomEvent(client, {
       roomId: input.roomId,
       eventType: "TASK_REQUEUED",
       actorId: input.actorId,
       payload: { taskId: input.taskId, reason: "voluntary_unclaim" }
     });
 
-    return getRoomSnapshotById(client, input.roomId);
+    return { ok: true as const, eventId: requeueEvent.id, seq: requeueEvent.seq, roomId: input.roomId };
   });
 }
 
@@ -882,6 +902,8 @@ export async function deliverTask(input: unknown) {
   const command = deliverTaskCommandSchema.parse(input);
 
   return withClient(async (client) => {
+    await assertActiveMember(client, command.roomId, command.actorId);
+    await ensureNoBlockingDisputes(client, command.roomId);
     const task = await loadTask(client, command.roomId, command.taskId);
     assert(task.assigned_to === command.actorId, "Only the assignee can deliver the task");
     assert(task.status === "CLAIMED" || task.status === "REJECTED", "Task must be claimed or rejected before delivery");
@@ -923,7 +945,7 @@ export async function deliverTask(input: unknown) {
       [command.roomId, command.taskId, artifactId]
     );
     await touchRoom(client, command.roomId, "IN_REVIEW", "3");
-    await appendRoomEvent(client, {
+    const deliverEvent = await appendRoomEvent(client, {
       roomId: command.roomId,
       eventType: "TASK_DELIVERED",
       actorId: command.actorId,
@@ -940,7 +962,7 @@ export async function deliverTask(input: unknown) {
       payload: { roomId: command.roomId, taskId: command.taskId, artifactId, actorId: command.actorId }
     });
 
-    return getRoomSnapshotById(client, command.roomId);
+    return { ok: true as const, eventId: deliverEvent.id, seq: deliverEvent.seq, roomId: command.roomId };
   });
 }
 
@@ -965,6 +987,7 @@ async function finalizeTaskReview(
     [randomUUID(), input.roomId, input.taskId, input.actorId, input.verdict, input.notes]
   );
 
+  let lastEvent;
   if (input.verdict === "ACCEPTED") {
     await client.query(
       `
@@ -982,7 +1005,7 @@ async function finalizeTaskReview(
       `,
       [input.roomId, task.assigned_to, numeric(task.weight)]
     );
-    await appendRoomEvent(client, {
+    lastEvent = await appendRoomEvent(client, {
       roomId: input.roomId,
       eventType: "TASK_ACCEPTED",
       actorId: input.actorId,
@@ -1009,7 +1032,7 @@ async function finalizeTaskReview(
       `,
       [input.roomId, input.taskId, nextStatus]
     );
-    await appendRoomEvent(client, {
+    lastEvent = await appendRoomEvent(client, {
       roomId: input.roomId,
       eventType: "TASK_REJECTED",
       actorId: input.actorId,
@@ -1020,7 +1043,7 @@ async function finalizeTaskReview(
       }
     });
     if (nextStatus === "BLOCKED") {
-      await appendRoomEvent(client, {
+      lastEvent = await appendRoomEvent(client, {
         roomId: input.roomId,
         eventType: "TASK_BLOCKED",
         actorId: input.actorId,
@@ -1031,6 +1054,7 @@ async function finalizeTaskReview(
       });
     }
   }
+  return lastEvent;
 
   const remainingDelivered = await client.query<{ count: string }>(
     "SELECT COUNT(*)::text AS count FROM charter_tasks WHERE room_id = $1 AND status = 'DELIVERED'",
@@ -1049,8 +1073,8 @@ export async function reviewTask(input: unknown) {
   const command = reviewTaskCommandSchema.parse(input);
 
   return withClient(async (client) => {
-    await finalizeTaskReview(client, command);
-    return getRoomSnapshotById(client, command.roomId);
+    const event = await finalizeTaskReview(client, command);
+    return { ok: true as const, eventId: event?.id ?? "", seq: event?.seq ?? -1, roomId: command.roomId };
   });
 }
 
@@ -1067,7 +1091,7 @@ export async function recordPeerRating(input: unknown) {
       `,
       [command.roomId, command.actorId, command.targetId, command.signal]
     );
-    return getRoomSnapshotById(client, command.roomId);
+    return { ok: true as const, eventId: "", seq: -1, roomId: command.roomId };
   });
 }
 
@@ -1084,7 +1108,7 @@ export async function recordRequesterRating(input: unknown) {
       `,
       [command.roomId, command.actorId, command.targetId, command.rating]
     );
-    return getRoomSnapshotById(client, command.roomId);
+    return { ok: true as const, eventId: "", seq: -1, roomId: command.roomId };
   });
 }
 
@@ -1113,8 +1137,7 @@ export async function proposeSettlement(input: { roomId: string; actorId: string
     const computation = computeSettlement({
       budgetTotal: numeric(room.budget_total),
       baselineSplit: charter.baseline_split,
-      bonusPoolPct: numeric(charter.bonus_pool_pct),
-      malusPoolPct: numeric(charter.malus_pool_pct),
+      discretionaryPoolPct: numeric(charter.bonus_pool_pct),
       acceptedTasks: tasks
         .filter((task) => task.status === "ACCEPTED" && task.assigned_to)
         .map((task) => ({
@@ -1160,7 +1183,7 @@ export async function proposeSettlement(input: { roomId: string; actorId: string
         input.roomId,
         JSON.stringify(computation.allocations),
         numeric(charter.bonus_pool_pct) * numeric(room.budget_total),
-        numeric(charter.malus_pool_pct) * numeric(room.budget_total),
+        0,
         JSON.stringify({
           ...computation.computationLog,
           shares: computation.shares
@@ -1168,7 +1191,7 @@ export async function proposeSettlement(input: { roomId: string; actorId: string
       ]
     );
     await touchRoom(client, input.roomId, "IN_SETTLEMENT", "4");
-    await appendRoomEvent(client, {
+    const settlementEvent = await appendRoomEvent(client, {
       roomId: input.roomId,
       eventType: "SETTLEMENT_PROPOSED",
       actorId: input.actorId,
@@ -1179,7 +1202,7 @@ export async function proposeSettlement(input: { roomId: string; actorId: string
       }
     });
 
-    return getRoomSnapshotById(client, input.roomId);
+    return { ok: true as const, eventId: settlementEvent.id, seq: settlementEvent.seq, roomId: input.roomId };
   });
 }
 
@@ -1187,6 +1210,7 @@ export async function voteSettlement(input: unknown) {
   const command = settlementVoteCommandSchema.parse(input);
 
   return withClient(async (client) => {
+    await assertActiveMember(client, command.roomId, command.actorId);
     if (command.vote === "REJECT") {
       assert(command.reason?.trim(), "Reject votes require a written reason");
     }
@@ -1204,7 +1228,7 @@ export async function voteSettlement(input: unknown) {
       `,
       [randomUUID(), command.proposalId, command.roomId, command.actorId, command.vote, command.reason ?? null]
     );
-    await appendRoomEvent(client, {
+    let lastVoteEvent = await appendRoomEvent(client, {
       roomId: command.roomId,
       eventType: "SETTLEMENT_VOTE",
       actorId: command.actorId,
@@ -1267,7 +1291,7 @@ export async function voteSettlement(input: unknown) {
           signature: signedPayload
         }
       });
-      await appendRoomEvent(client, {
+      lastVoteEvent = await appendRoomEvent(client, {
         roomId: command.roomId,
         eventType: "ROOM_SETTLED",
         actorId: command.actorId,
@@ -1277,7 +1301,7 @@ export async function voteSettlement(input: unknown) {
       });
     }
 
-    return getRoomSnapshotById(client, command.roomId);
+    return { ok: true as const, eventId: lastVoteEvent.id, seq: lastVoteEvent.seq, roomId: command.roomId };
   });
 }
 
@@ -1285,8 +1309,18 @@ export async function fileDispute(input: unknown) {
   const command = createDisputeCommandSchema.parse(input);
 
   return withClient(async (client) => {
+    await assertActiveMember(client, command.roomId, command.actorId);
     const room = await loadRoom(client, command.roomId);
     const charter = await loadLatestCharter(client, command.roomId);
+    const agreement = charter;
+    if (!agreement) throw new DomainError("NO_CHARTER", "Room has no charter");
+    const agentBaseline = (agreement.baseline_split as Record<string, number>)[command.actorId] ?? 0;
+    if (agentBaseline === 0)
+      throw new DomainError("AGENT_NOT_IN_ROOM", `${command.actorId} has no baseline in this room`);
+    const filing_stake = Math.max(
+      Number(numeric(room.budget_total)) * agentBaseline * 0.03,
+      1.00
+    ).toFixed(2);
     const timeoutRules = parseJson<Record<string, number>>(charter?.timeout_rules ?? defaultTimeoutRules);
     const disputeId = randomUUID();
     const coolingOffExpiresAt = addHours(now(), timeoutRules.disputeCoolingOffHours);
@@ -1305,7 +1339,7 @@ export async function fileDispute(input: unknown) {
         command.subType,
         command.actorId,
         command.respondentId,
-        numeric(room.budget_total) * 0.01,
+        filing_stake,
         command.remedySought,
         coolingOffExpiresAt.toISOString()
       ]
@@ -1322,7 +1356,7 @@ export async function fileDispute(input: unknown) {
     }
 
     await touchRoom(client, command.roomId, "DISPUTED", room.phase);
-    await appendRoomEvent(client, {
+    const disputeEvent = await appendRoomEvent(client, {
       roomId: command.roomId,
       eventType: "DISPUTE_FILED",
       actorId: command.actorId,
@@ -1344,7 +1378,7 @@ export async function fileDispute(input: unknown) {
       }
     });
 
-    return getRoomSnapshotById(client, command.roomId);
+    return { ok: true as const, eventId: disputeEvent.id, seq: disputeEvent.seq, roomId: command.roomId };
   });
 }
 
@@ -1389,7 +1423,7 @@ export async function assignDisputePanel(input: { roomId: string; disputeId: str
       `,
       [input.disputeId, panelDeadline.toISOString()]
     );
-    await appendRoomEvent(client, {
+    const paneledEvent = await appendRoomEvent(client, {
       roomId: input.roomId,
       eventType: "DISPUTE_PANELED",
       actorId: input.actorId,
@@ -1408,7 +1442,7 @@ export async function assignDisputePanel(input: { roomId: string; disputeId: str
         actorId: input.actorId
       }
     });
-    return getRoomSnapshotById(client, input.roomId);
+    return { ok: true as const, eventId: paneledEvent.id, seq: paneledEvent.seq, roomId: input.roomId };
   });
 }
 
@@ -1432,7 +1466,7 @@ export async function resolveDispute(input: {
       `,
       [input.disputeId, JSON.stringify(input.resolution)]
     );
-    await appendRoomEvent(client, {
+    const resolvedEvent = await appendRoomEvent(client, {
       roomId: input.roomId,
       eventType: "DISPUTE_RESOLVED",
       actorId: input.actorId,
@@ -1453,7 +1487,7 @@ export async function resolveDispute(input: {
       await touchRoom(client, input.roomId, fallbackStatus, fallbackPhase);
     }
 
-    return getRoomSnapshotById(client, input.roomId);
+    return { ok: true as const, eventId: resolvedEvent.id, seq: resolvedEvent.seq, roomId: input.roomId };
   });
 }
 
@@ -1466,7 +1500,7 @@ export async function overrideRoomStatus(input: {
 }) {
   return withClient(async (client) => {
     await touchRoom(client, input.roomId, input.status, input.phase);
-    await appendRoomEvent(client, {
+    const overrideEvent = await appendRoomEvent(client, {
       roomId: input.roomId,
       eventType: "MANUAL_OVERRIDE",
       actorId: input.actorId,
@@ -1476,7 +1510,7 @@ export async function overrideRoomStatus(input: {
         reason: input.reason
       }
     });
-    return getRoomSnapshotById(client, input.roomId);
+    return { ok: true as const, eventId: overrideEvent.id, seq: overrideEvent.seq, roomId: input.roomId };
   });
 }
 
@@ -1530,14 +1564,14 @@ export async function getRoomSnapshot(roomId: string) {
   }
 }
 
-async function getRoomSnapshotById(client: PoolClient, roomId: string) {
+async function getRoomSnapshotById(client: PoolClient, roomId: string, verify = false) {
   const room = await loadRoom(client, roomId);
   const mission = await loadMission(client, roomId);
   const members = await loadMembers(client, roomId);
   const charter = await loadLatestCharter(client, roomId);
   const tasks = await loadTasks(client, roomId, charter?.id);
   const events = await fetchRoomEvents(client, roomId);
-  const verification = verifyEventChain(events);
+  const verification = verify ? verifyEventChain(events) : { ok: true, errors: [] };
   const projection = replayRoomEvents(events);
   const latestSettlement = await loadLatestSettlement(client, roomId);
   const disputes = await loadDisputes(client, roomId);
@@ -1583,8 +1617,7 @@ async function getRoomSnapshotById(client: PoolClient, roomId: string) {
           version: charter.version,
           status: charter.status,
           baselineSplit: charter.baseline_split,
-          bonusPoolPct: numeric(charter.bonus_pool_pct),
-          malusPoolPct: numeric(charter.malus_pool_pct),
+          discretionaryPoolPct: numeric(charter.bonus_pool_pct),
           consensusConfig: charter.consensus_config,
           timeoutRules: charter.timeout_rules,
           signDeadline: charter.sign_deadline?.toISOString() ?? null
@@ -1828,6 +1861,27 @@ const WORKER_ID = `${process.pid}`;
 export async function processDueJobs(limit = 25) {
   const client = await getDbPool().connect();
   try {
+    // Recovery: reset stuck RUNNING jobs (timeout = 10 minutes)
+    await client.query(`
+      UPDATE job_queue
+      SET status = 'PENDING',
+          locked_at = NULL,
+          locked_by = NULL,
+          attempts = attempts + 1
+      WHERE status = 'RUNNING'
+        AND locked_at < NOW() - INTERVAL '10 minutes'
+        AND attempts < 3
+    `);
+
+    // Hard-stop: jobs failed 3+ times → DEAD
+    await client.query(`
+      UPDATE job_queue
+      SET status = 'DEAD'
+      WHERE status = 'RUNNING'
+        AND locked_at < NOW() - INTERVAL '10 minutes'
+        AND attempts >= 3
+    `);
+
     // Atomic SELECT + lock in one statement to prevent two workers picking the same job.
     // FOR UPDATE SKIP LOCKED ensures concurrent workers each claim distinct rows.
     const result = await client.query<JobRow>(
