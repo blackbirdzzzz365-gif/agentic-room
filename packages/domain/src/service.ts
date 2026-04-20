@@ -407,6 +407,35 @@ async function ensureNoOpenDisputes(client: PoolClient, roomId: string) {
     throw new DomainError("OPEN_DISPUTE_EXISTS", "Room has an unresolved dispute");
 }
 
+// BUG-01: DFS cycle detection for task dependency DAGs.
+function detectCycle(tasks: Array<{ id: string; dependencies?: string[] }>): string | null {
+  const adj = new Map<string, string[]>();
+  for (const t of tasks) adj.set(t.id, t.dependencies ?? []);
+  const WHITE = 0, GRAY = 1, BLACK = 2;
+  const color = new Map<string, number>();
+  for (const id of adj.keys()) color.set(id, WHITE);
+  function dfs(node: string): string | null {
+    color.set(node, GRAY);
+    for (const dep of adj.get(node) ?? []) {
+      if (!adj.has(dep)) continue;
+      if (color.get(dep) === GRAY) return `${node} → ${dep}`;
+      if (color.get(dep) === WHITE) {
+        const r = dfs(dep);
+        if (r) return r;
+      }
+    }
+    color.set(node, BLACK);
+    return null;
+  }
+  for (const id of adj.keys()) {
+    if (color.get(id) === WHITE) {
+      const c = dfs(id);
+      if (c) return c;
+    }
+  }
+  return null;
+}
+
 function assertTaskWeights(tasks: CharterDraft["tasks"]) {
   const total = tasks.reduce((value, task) => value + task.weight, 0);
   assert(Math.abs(total - 100) < 0.0001, `Task weights must sum to 100, received ${total}`);
@@ -640,6 +669,9 @@ export async function createCharter(input: unknown) {
     assert(nextVersion <= 3, "Maximum charter rounds exceeded");
     assertTaskWeights(command.draft.tasks);
     assertBaselineSplit(command.draft.baselineSplit);
+    // BUG-01: reject charters with circular task dependencies before any DB writes.
+    const cycle = detectCycle(command.draft.tasks.map((t) => ({ id: t.id ?? "", dependencies: t.dependencies })));
+    if (cycle) throw new DomainError(`Task dependency cycle detected: ${cycle}`, "DAG_CYCLE_DETECTED");
 
     const timeoutRules = {
       ...defaultTimeoutRules,
@@ -820,6 +852,15 @@ export async function claimTask(input: unknown) {
     assert(task, `Task ${command.taskId} not found`);
     assert(OPEN_TASK_STATUSES.has(task.status), `Task ${command.taskId} is not claimable`);
     ensureDependenciesAccepted(tasks, task);
+    // BUG-03: Lock the task row to prevent two agents claiming the same task concurrently.
+    // The SELECT ... FOR UPDATE blocks until any concurrent transaction holding the row lock
+    // commits or rolls back, then re-checks status before the UPDATE below.
+    const locked = await client.query<{ status: string }>(
+      `SELECT status FROM charter_tasks WHERE room_id = $1 AND id = $2 FOR UPDATE`,
+      [command.roomId, command.taskId]
+    );
+    assert(locked.rows[0] && OPEN_TASK_STATUSES.has(locked.rows[0].status as TaskStatus),
+      `Task ${command.taskId} is not claimable (concurrent claim may have won)`);
     const timeoutRules = parseJson<Record<string, number>>(charter?.timeout_rules ?? defaultTimeoutRules);
     const deliveryDeadline = addHours(now(), timeoutRules.taskClaimWindowHours);
 
@@ -1392,19 +1433,29 @@ export async function assignDisputePanel(input: { roomId: string; disputeId: str
     const timeoutRules = parseJson<Record<string, number>>(charter?.timeout_rules ?? defaultTimeoutRules);
     const panelDeadline = addHours(now(), timeoutRules.panelReviewWindowHours);
     const members = await loadMembers(client, input.roomId);
+    // BUG-02: require at least MIN_PANEL_SIZE eligible arbiters.
+    const MIN_PANEL_SIZE = 3;
+    const eligibleMembers = members.filter(
+      (member) =>
+        member.status === "ACTIVE" &&
+        member.member_id !== dispute.claimant_id &&
+        member.member_id !== dispute.respondent_id
+    );
+    if (input.panelists?.length) {
+      if (input.panelists.length < MIN_PANEL_SIZE)
+        throw new DomainError(
+          `Need at least ${MIN_PANEL_SIZE} eligible arbiters, found ${input.panelists.length}`,
+          "INSUFFICIENT_PANEL_CANDIDATES"
+        );
+    } else if (eligibleMembers.length < MIN_PANEL_SIZE) {
+      throw new DomainError(
+        `Need at least ${MIN_PANEL_SIZE} eligible arbiters, found ${eligibleMembers.length}`,
+        "INSUFFICIENT_PANEL_CANDIDATES"
+      );
+    }
     const candidatePanel = input.panelists?.length
-      ? input.panelists
-      : members
-          .filter(
-            (member) =>
-              member.status === "ACTIVE" &&
-              member.member_id !== dispute.claimant_id &&
-              member.member_id !== dispute.respondent_id
-          )
-          .slice(0, 3)
-          .map((member) => member.member_id);
-
-    assert(candidatePanel.length > 0, "At least one panelist is required");
+      ? input.panelists.slice(0, MIN_PANEL_SIZE)
+      : eligibleMembers.slice(0, MIN_PANEL_SIZE).map((m) => m.member_id);
     await client.query("DELETE FROM dispute_panel_members WHERE dispute_id = $1", [input.disputeId]);
     for (const panelistId of candidatePanel) {
       await client.query(
