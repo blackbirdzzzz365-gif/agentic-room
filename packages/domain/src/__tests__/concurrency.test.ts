@@ -28,7 +28,8 @@ const BASE_CHARTER = {
   room_id: roomId,
   version: 1,
   baseline_split: { "agent-1": 0.5, "agent-2": 0.5 },
-  discretionary_pool_pct: "0.05",
+  bonus_pool_pct: "0.03",
+  malus_pool_pct: "0.02",
   consensus_config: { settlementQuorumRatio: 0.6, settlementAcceptRatio: 0.666 },
   timeout_rules: {
     invitationWindowHours: 48,
@@ -110,11 +111,12 @@ function mockPool(client: ReturnType<typeof makeSeqClient>) {
 function claimSuccessResponses(taskStatus = "OPEN", assignedTo: string | null = null) {
   return [
     { rows: [] },                                                                      // BEGIN
-    { rows: [{ status: "ACTIVE" }] },                                                 // assertActiveMember
-    { rows: [{ count: "0" }] },                                                       // ensureNoBlockingDisputes
+    { rowCount: 1, rows: [{ "?column?": 1 }] },                                                 // assertActiveMember
+    { rowCount: 0, rows: [] },                                                       // ensureNoBlockingDisputes
     { rows: [BASE_ROOM] },                                                             // loadRoom
     { rows: [BASE_CHARTER] },                                                          // loadLatestCharter
     { rows: [makeTaskRow({ status: taskStatus, assigned_to: assignedTo })] },         // loadTasks
+    { rows: [{ status: taskStatus }] },                                                // BUG-03: FOR UPDATE lock
     { rows: [] },                                                                      // UPDATE charter_tasks
     { rows: [] },                                                                      // UPDATE room_members stake
     { rows: [] },                                                                      // appendRoomEvent SELECT
@@ -150,8 +152,8 @@ describe("T-01: Concurrent claim race", () => {
     mockPool(
       makeSeqClient([
         { rows: [] },                                                            // BEGIN
-        { rows: [{ status: "ACTIVE" }] },                                       // assertActiveMember
-        { rows: [{ count: "0" }] },                                             // ensureNoBlockingDisputes
+        { rowCount: 1, rows: [{ "?column?": 1 }] },                                       // assertActiveMember
+        { rowCount: 0, rows: [] },                                             // ensureNoBlockingDisputes
         { rows: [BASE_ROOM] },                                                   // loadRoom
         { rows: [BASE_CHARTER] },                                                // loadLatestCharter
         { rows: [makeTaskRow({ status: "CLAIMED", assigned_to: "agent-1" })] }, // loadTasks — already claimed
@@ -179,8 +181,8 @@ describe("T-01: Concurrent claim race", () => {
     mockPool(
       makeSeqClient([
         { rows: [] },
-        { rows: [{ status: "ACTIVE" }] },
-        { rows: [{ count: "0" }] },
+        { rowCount: 1, rows: [{ "?column?": 1 }] },
+        { rowCount: 0, rows: [] },
         { rows: [BASE_ROOM] },
         { rows: [BASE_CHARTER] },
         { rows: [makeTaskRow({ status: "CLAIMED", assigned_to: "agent-1" })] },

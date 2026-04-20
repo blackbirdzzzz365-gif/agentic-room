@@ -50,7 +50,8 @@ const CHARTER_ROW = {
   room_id: roomId,
   version: 1,
   baseline_split: { "agent-1": 0.5, "agent-2": 0.5 },
-  discretionary_pool_pct: "0.05",
+  bonus_pool_pct: "0.03",
+  malus_pool_pct: "0.02",
   consensus_config: { settlementQuorumRatio: 0.6, settlementAcceptRatio: 0.666 },
   timeout_rules: {
     invitationWindowHours: 48,
@@ -192,7 +193,7 @@ describe("T-03: Panel assignment < 3 eligible members", () => {
 
     await expect(
       assignDisputePanel({ roomId, disputeId, actorId: "coord-1" })
-    ).rejects.toThrow(/panelist|panel|insufficient/i);
+    ).rejects.toThrow(/panelist|panel|insufficient|arbiters/i);
   });
 
   it("succeeds when >= 3 eligible members are available", async () => {
@@ -222,8 +223,8 @@ describe("T-05: Cooling-off D-06 guard", () => {
   function claimBlockedResponses() {
     return [
       { rows: [] },
-      { rows: [{ status: "ACTIVE" }] },
-      { rows: [{ count: "1" }] },   // blocking dispute found
+      { rowCount: 1, rows: [{ "?column?": 1 }] },
+      { rowCount: 1, rows: [{ "?column?": 1 }] },   // blocking dispute found
       { rows: [] }                  // ROLLBACK
     ];
   }
@@ -232,11 +233,12 @@ describe("T-05: Cooling-off D-06 guard", () => {
   function claimNotBlockedResponses() {
     return [
       { rows: [] },                                                            // BEGIN
-      { rows: [{ status: "ACTIVE" }] },                                       // assertActiveMember
-      { rows: [{ count: "0" }] },                                             // ensureNoBlockingDisputes — clear
+      { rowCount: 1, rows: [{ "?column?": 1 }] },                                       // assertActiveMember
+      { rowCount: 0, rows: [] },                                             // ensureNoBlockingDisputes — clear
       { rows: [ROOM_ROW] },                                                    // loadRoom
       { rows: [CHARTER_ROW] },                                                // loadLatestCharter
       { rows: [{ ...TASK_ROW, status: "OPEN", assigned_to: null }] },        // loadTasks
+      { rows: [{ status: "OPEN" }] },                                          // BUG-03: FOR UPDATE lock
       { rows: [] },                                                            // UPDATE charter_tasks
       { rows: [] },                                                            // UPDATE room_members stake
       { rows: [] },                                                            // appendRoomEvent SELECT
@@ -250,8 +252,8 @@ describe("T-05: Cooling-off D-06 guard", () => {
   function deliverBlockedResponses() {
     return [
       { rows: [] },
-      { rows: [{ status: "ACTIVE" }] },
-      { rows: [{ count: "1" }] },
+      { rowCount: 1, rows: [{ "?column?": 1 }] },
+      { rowCount: 1, rows: [{ "?column?": 1 }] },
       { rows: [] }
     ];
   }
@@ -260,8 +262,8 @@ describe("T-05: Cooling-off D-06 guard", () => {
   function voteBlockedResponses() {
     return [
       { rows: [] },
-      { rows: [{ status: "ACTIVE" }] },
-      { rows: [{ count: "1" }] },
+      { rowCount: 1, rows: [{ "?column?": 1 }] },
+      { rowCount: 1, rows: [{ "?column?": 1 }] },
       { rows: [] }
     ];
   }
@@ -271,7 +273,7 @@ describe("T-05: Cooling-off D-06 guard", () => {
 
     await expect(
       claimTask({ actorId: "agent-1", actorRole: "CONTRIBUTOR", roomId, taskId })
-    ).rejects.toThrow(/active dispute blocks/i);
+    ).rejects.toThrow(/active dispute blocking|OPEN_DISPUTE_EXISTS/i);
   });
 
   it("claimTask is blocked when an OPEN dispute exists", async () => {
@@ -279,7 +281,7 @@ describe("T-05: Cooling-off D-06 guard", () => {
 
     await expect(
       claimTask({ actorId: "agent-1", actorRole: "CONTRIBUTOR", roomId, taskId })
-    ).rejects.toThrow(/active dispute blocks/i);
+    ).rejects.toThrow(/active dispute blocking|OPEN_DISPUTE_EXISTS/i);
   });
 
   it("claimTask proceeds when dispute is ESCALATED_TO_MANUAL (not in blocking set)", async () => {
@@ -309,7 +311,7 @@ describe("T-05: Cooling-off D-06 guard", () => {
         contentRef: "ipfs://abc",
         contentType: "text/plain"
       })
-    ).rejects.toThrow(/active dispute blocks/i);
+    ).rejects.toThrow(/active dispute blocking|OPEN_DISPUTE_EXISTS/i);
   });
 
   it("voteSettlement is blocked by ESCALATED_TO_MANUAL (ensureNoOpenDisputes blocks all non-RESOLVED)", async () => {
@@ -323,7 +325,7 @@ describe("T-05: Cooling-off D-06 guard", () => {
         proposalId,
         vote: "ACCEPT"
       })
-    ).rejects.toThrow(/open disputes block/i);
+    ).rejects.toThrow(/unresolved dispute|OPEN_DISPUTE_EXISTS/i);
   });
 
   it("voteSettlement is blocked when a COOLING_OFF dispute exists", async () => {
@@ -337,6 +339,6 @@ describe("T-05: Cooling-off D-06 guard", () => {
         proposalId,
         vote: "ACCEPT"
       })
-    ).rejects.toThrow(/open disputes block/i);
+    ).rejects.toThrow(/unresolved dispute|OPEN_DISPUTE_EXISTS/i);
   });
 });

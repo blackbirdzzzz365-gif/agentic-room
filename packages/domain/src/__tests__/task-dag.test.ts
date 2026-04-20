@@ -71,7 +71,8 @@ const CHARTER_ROW = {
   room_id: roomId,
   version: 1,
   baseline_split: { "agent-1": 0.5, "agent-2": 0.5 },
-  discretionary_pool_pct: "0.05",
+  bonus_pool_pct: "0.03",
+  malus_pool_pct: "0.02",
   consensus_config: { settlementQuorumRatio: 0.6, settlementAcceptRatio: 0.666 },
   timeout_rules: {
     invitationWindowHours: 48,
@@ -287,11 +288,12 @@ describe("T-04: Out-of-order DAG claiming", () => {
   function claimResponses(tasks: unknown[], targetTaskId = taskIdB) {
     return [
       { rows: [] },                           // BEGIN
-      { rows: [{ status: "ACTIVE" }] },       // assertActiveMember
-      { rows: [{ count: "0" }] },             // ensureNoBlockingDisputes
+      { rowCount: 1, rows: [{ "?column?": 1 }] },       // assertActiveMember
+      { rowCount: 0, rows: [] },             // ensureNoBlockingDisputes
       { rows: [ROOM_ROW_ACTIVE] },            // loadRoom
       { rows: [CHARTER_ROW] },               // loadLatestCharter
       { rows: tasks },                        // loadTasks
+      { rows: [{ status: "OPEN" }] },         // BUG-03: FOR UPDATE lock (only hit on success path)
       { rows: [] },                           // UPDATE charter_tasks
       { rows: [] },                           // UPDATE room_members stake
       { rows: [] },                           // appendRoomEvent SELECT
