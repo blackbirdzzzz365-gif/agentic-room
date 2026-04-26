@@ -41,8 +41,9 @@ type CreateRoomFormValues = {
 // ─── API response shape ───────────────────────────────────────────────────────
 
 interface CreateRoomResponse {
-  id: string;
-  name: string;
+  roomId?: string;
+  id?: string;
+  name?: string;
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -83,17 +84,20 @@ export default function CreateRoomPage() {
         "POST"
       );
 
-      if (error || !data) {
+      const roomId = data?.roomId ?? data?.id;
+      if (error || !data || !roomId) {
         toast.error("Failed to create room", {
-          description: error ?? "An unexpected error occurred. Please try again.",
+          description:
+            error ??
+            "The API did not return a room ID. Please check the room creation response.",
         });
         return;
       }
 
       toast.success("Room created", {
-        description: `"${data.name}" is ready for mission intake.`,
+        description: `"${data.name ?? values.name}" is ready for mission intake.`,
       });
-      router.push(`/rooms/${data.id}`);
+      router.push(`/rooms/${roomId}`);
     } finally {
       setIsSubmitting(false);
     }
