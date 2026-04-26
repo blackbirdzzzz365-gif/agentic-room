@@ -117,13 +117,14 @@ export const missionStructuredSchema = z.object({
 
 export const actorSchema = z.object({
   actorId: z.string().min(1),
-  actorRole: agentRoleSchema
+  actorRole: agentRoleSchema.optional()
 });
 
 export const timeoutRulesSchema = z.object({
   invitationWindowHours: z.number().int().positive().default(48),
   charterSignWindowHours: z.number().int().positive().default(24),
   taskClaimWindowHours: z.number().int().positive().default(24),
+  taskDeliveryWindowHours: z.number().int().positive().default(72),
   reviewWindowHours: z.number().int().positive().default(24),
   settlementVoteWindowHours: z.number().int().positive().default(48),
   disputeCoolingOffHours: z.number().int().positive().default(12),
@@ -154,7 +155,8 @@ export const charterDraftSchema = z.object({
     (value) => Object.keys(value).length > 0,
     "baseline split must not be empty"
   ),
-  discretionaryPoolPct: z.number().min(0).max(0.1),
+  bonusPoolPct: z.number().min(0).max(0.2),
+  malusPoolPct: z.number().min(0).max(0.1),
   consensusConfig: consensusConfigSchema,
   timeoutRules: timeoutRulesSchema
 });

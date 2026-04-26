@@ -50,6 +50,7 @@ services:
       ARTIFACT_PUBLIC_BASE_URL: http://minio:9000/agentic-room
       PAYMENT_ADAPTER_MODE: stub
       SIGNER_KEY_ID: docker-dev-ed25519
+      AGENT_API_KEYS: '{"dev-agent-key":{"actorId":"coord-1","actorRole":"ADMIN"}}'
     ports:
       - "${API_PORT:-4000}:4000"
     command: >
@@ -83,6 +84,7 @@ services:
       WEB_PORT: 3000
       API_BASE_URL: http://api:4000
       NEXT_PUBLIC_API_BASE_URL: http://localhost:${API_PORT:-4000}
+      AGENT_API_KEY: dev-agent-key
     ports:
       - "${WEB_PORT:-3000}:3000"
 

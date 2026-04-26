@@ -25,6 +25,20 @@ type StatusValue =
   | "PENDING_REVIEW"
   | "MANUAL_REVIEW"
   | "FINAL"
+  | "DRAFT"
+  | "CONFIRMED"
+  | "EXPIRED"
+  | "INVITED"
+  | "DECLINED"
+  | "INACTIVE"
+  | "REMOVED"
+  | "ACCEPT"
+  | "REJECT"
+  | "ABSTAIN"
+  | "PENDING"
+  | "SIGNED"
+  | "DONE"
+  | "RUNNING"
   | (string & {});
 
 interface StatusConfig {
@@ -153,6 +167,76 @@ const STATUS_MAP: Record<string, StatusConfig> = {
     label: "Final",
     classes:
       "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300",
+  },
+  DRAFT: {
+    label: "Draft",
+    classes:
+      "bg-slate-100 text-slate-600 dark:bg-slate-800/60 dark:text-slate-300",
+  },
+  CONFIRMED: {
+    label: "Confirmed",
+    classes:
+      "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300",
+  },
+  EXPIRED: {
+    label: "Expired",
+    classes:
+      "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
+  },
+  INVITED: {
+    label: "Invited",
+    classes:
+      "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
+  },
+  DECLINED: {
+    label: "Declined",
+    classes:
+      "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
+  },
+  INACTIVE: {
+    label: "Inactive",
+    classes:
+      "bg-slate-100 text-slate-600 dark:bg-slate-800/60 dark:text-slate-300",
+  },
+  REMOVED: {
+    label: "Removed",
+    classes:
+      "bg-slate-100 text-slate-600 dark:bg-slate-800/60 dark:text-slate-300",
+  },
+  ACCEPT: {
+    label: "Accept",
+    classes:
+      "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300",
+  },
+  REJECT: {
+    label: "Reject",
+    classes:
+      "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
+  },
+  ABSTAIN: {
+    label: "Abstain",
+    classes:
+      "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
+  },
+  PENDING: {
+    label: "Pending",
+    classes:
+      "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
+  },
+  SIGNED: {
+    label: "Signed",
+    classes:
+      "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300",
+  },
+  DONE: {
+    label: "Done",
+    classes:
+      "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300",
+  },
+  RUNNING: {
+    label: "Running",
+    classes:
+      "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
   },
 };
 

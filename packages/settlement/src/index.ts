@@ -5,6 +5,7 @@ type AcceptedTask = {
 };
 
 type PeerRating = {
+  raterId: string;
   targetId: string;
   signal: number;
 };
@@ -17,7 +18,8 @@ type RequesterRating = {
 type SettlementInput = {
   budgetTotal: number;
   baselineSplit: Record<string, number>;
-  discretionaryPoolPct: number;
+  bonusPoolPct: number;
+  malusPoolPct: number;
   acceptedTasks: AcceptedTask[];
   peerRatings: PeerRating[];
   requesterRatings: RequesterRating[];
@@ -27,8 +29,10 @@ export type SettlementContributionRecord = {
   agentId: string;
   baselineShare: number;
   acceptedTaskWeight: number;
+  acceptedTaskShare: number;
   peerAdjustment: number;
   requesterAdjustment: number;
+  taskWeightAdjustment: number;
   finalShare: number;
   amount: number;
   computationLog: Record<string, number>;
@@ -38,8 +42,11 @@ export type SettlementComputation = {
   allocations: Record<string, number>;
   shares: Record<string, number>;
   contributionRecords: SettlementContributionRecord[];
+  bonusPoolUsed: number;
+  malusPoolReclaimed: number;
   computationLog: {
-    discretionaryPoolAmount: number;
+    bonusPoolAmount: number;
+    malusPoolAmount: number;
     totalAcceptedWeight: number;
   };
 };
@@ -69,20 +76,21 @@ export function computeSettlement(input: SettlementInput): SettlementComputation
   }
 
   const totalAcceptedWeight = sum(input.acceptedTasks.map((task) => task.weight));
-  const discretionaryPoolAmount = input.budgetTotal * input.discretionaryPoolPct;
+  const bonusPoolAmount = input.budgetTotal * input.bonusPoolPct;
+  const malusPoolAmount = input.budgetTotal * input.malusPoolPct;
 
-  const receivedPeerSignals = new Map<string, number[]>();
+  const peerSignalsByTarget = new Map<string, Array<{ raterId: string; signal: number }>>();
   for (const rating of input.peerRatings) {
-    const current = receivedPeerSignals.get(rating.targetId) ?? [];
-    current.push(rating.signal);
-    receivedPeerSignals.set(rating.targetId, current);
+    const current = peerSignalsByTarget.get(rating.targetId) ?? [];
+    current.push({ raterId: rating.raterId, signal: rating.signal });
+    peerSignalsByTarget.set(rating.targetId, current);
   }
 
-  const receivedRequesterRatings = new Map<string, number[]>();
+  const requesterRatingsByTarget = new Map<string, number[]>();
   for (const rating of input.requesterRatings) {
-    const current = receivedRequesterRatings.get(rating.targetId) ?? [];
+    const current = requesterRatingsByTarget.get(rating.targetId) ?? [];
     current.push(rating.rating);
-    receivedRequesterRatings.set(rating.targetId, current);
+    requesterRatingsByTarget.set(rating.targetId, current);
   }
 
   const weightByAgent = new Map<string, number>();
@@ -90,36 +98,56 @@ export function computeSettlement(input: SettlementInput): SettlementComputation
     weightByAgent.set(task.assignedTo, (weightByAgent.get(task.assignedTo) ?? 0) + task.weight);
   }
 
-  const clampedRecords = agentIds.map((agentId) => {
+  const positiveTaskReconciliationCap = input.bonusPoolPct * 0.5;
+  const negativeTaskReconciliationCap = input.malusPoolPct * 0.5;
+
+  const rawRecords = agentIds.map((agentId) => {
     const baselineShare = input.baselineSplit[agentId] ?? 0;
     const acceptedTaskWeight = weightByAgent.get(agentId) ?? 0;
+    const acceptedTaskShare = totalAcceptedWeight > 0 ? acceptedTaskWeight / totalAcceptedWeight : 0;
 
-    const peerSignals = receivedPeerSignals.get(agentId) ?? [];
-    const peerAvg = peerSignals.length > 0 ? sum(peerSignals) / peerSignals.length : 0;
-    const peerAdjustment = peerAvg * 0.05;
+    const peerSignals = peerSignalsByTarget.get(agentId) ?? [];
+    const distinctPeerRaters = new Set(peerSignals.map((item) => item.raterId));
+    const peerAvg =
+      distinctPeerRaters.size >= 2
+        ? sum(peerSignals.map((item) => item.signal)) / peerSignals.length
+        : 0;
+    const peerAdjustment = peerAvg * input.bonusPoolPct * 0.5;
 
-    const reqRatings = receivedRequesterRatings.get(agentId) ?? [];
-    const reqAvg = reqRatings.length > 0 ? sum(reqRatings) / reqRatings.length : 5;
-    // Convert 0-10 scale to [-1, +1], multiply by 0.05
-    const requesterAdjustment = ((reqAvg - 5) / 5) * 0.05;
+    const requesterRatings = requesterRatingsByTarget.get(agentId) ?? [];
+    const requesterAvg =
+      requesterRatings.length > 0 ? sum(requesterRatings) / requesterRatings.length : 5;
+    const requesterScore = (requesterAvg - 5) / 5;
+    const requesterAdjustment = requesterScore * input.malusPoolPct * 0.5;
 
-    const raw = baselineShare + peerAdjustment + requesterAdjustment;
-    const clamped = clamp(raw, baselineShare - 0.10, baselineShare + 0.10);
+    const rawTaskWeightAdjustment = acceptedTaskShare - baselineShare;
+    const taskWeightAdjustment = clamp(
+      rawTaskWeightAdjustment,
+      -negativeTaskReconciliationCap,
+      positiveTaskReconciliationCap
+    );
+    const rawShare = baselineShare + peerAdjustment + requesterAdjustment + taskWeightAdjustment;
+    const normalizedInputShare = Math.max(rawShare, 0);
 
     return {
       agentId,
       baselineShare,
       acceptedTaskWeight,
+      acceptedTaskShare,
       peerAdjustment,
       requesterAdjustment,
-      clamped,
+      taskWeightAdjustment,
+      normalizedInputShare,
       computationLog: {
         baselineShare: roundTo(baselineShare),
         acceptedTaskWeight: roundTo(acceptedTaskWeight),
+        acceptedTaskShare: roundTo(acceptedTaskShare),
         peerAdjustment: roundTo(peerAdjustment),
         requesterAdjustment: roundTo(requesterAdjustment),
-        rawShare: roundTo(raw),
-        clampedShare: roundTo(clamped)
+        rawTaskWeightAdjustment: roundTo(rawTaskWeightAdjustment),
+        taskWeightAdjustment: roundTo(taskWeightAdjustment),
+        rawShare: roundTo(rawShare),
+        normalizedInputShare: roundTo(normalizedInputShare)
       }
     };
   });
@@ -130,50 +158,79 @@ export function computeSettlement(input: SettlementInput): SettlementComputation
     return {
       allocations: zeroAllocations,
       shares: zeroShares,
-      contributionRecords: clampedRecords.map((record) => ({
+      contributionRecords: rawRecords.map((record) => ({
         agentId: record.agentId,
         baselineShare: record.baselineShare,
         acceptedTaskWeight: record.acceptedTaskWeight,
+        acceptedTaskShare: record.acceptedTaskShare,
         peerAdjustment: record.peerAdjustment,
         requesterAdjustment: record.requesterAdjustment,
+        taskWeightAdjustment: record.taskWeightAdjustment,
         finalShare: 0,
         amount: 0,
         computationLog: record.computationLog
       })),
+      bonusPoolUsed: 0,
+      malusPoolReclaimed: 0,
       computationLog: {
-        discretionaryPoolAmount: roundTo(discretionaryPoolAmount),
+        bonusPoolAmount: roundTo(bonusPoolAmount),
+        malusPoolAmount: roundTo(malusPoolAmount),
         totalAcceptedWeight: 0
       }
     };
   }
 
-  // Normalize so sum = 1.0
-  const clampedTotal = sum(clampedRecords.map((r) => Math.max(r.clamped, 0)));
-  const safeTotal = clampedTotal > 0 ? clampedTotal : 1;
+  const rawShareTotal = sum(rawRecords.map((record) => record.normalizedInputShare));
+  const safeTotal = rawShareTotal > 0 ? rawShareTotal : 1;
 
-  const contributionRecords: SettlementContributionRecord[] = clampedRecords.map((record) => {
-    const normalizedShare = Math.max(record.clamped, 0) / safeTotal;
+  const contributionRecords: SettlementContributionRecord[] = rawRecords.map((record) => {
+    const finalShare = record.normalizedInputShare / safeTotal;
     return {
       agentId: record.agentId,
       baselineShare: record.baselineShare,
       acceptedTaskWeight: record.acceptedTaskWeight,
+      acceptedTaskShare: record.acceptedTaskShare,
       peerAdjustment: record.peerAdjustment,
       requesterAdjustment: record.requesterAdjustment,
-      finalShare: roundTo(normalizedShare),
-      amount: roundTo(normalizedShare * input.budgetTotal),
+      taskWeightAdjustment: record.taskWeightAdjustment,
+      finalShare: roundTo(finalShare),
+      amount: roundTo(finalShare * input.budgetTotal),
       computationLog: record.computationLog
     };
   });
 
-  const allocations = Object.fromEntries(contributionRecords.map((r) => [r.agentId, r.amount]));
-  const shares = Object.fromEntries(contributionRecords.map((r) => [r.agentId, r.finalShare]));
+  const allocations = Object.fromEntries(contributionRecords.map((record) => [record.agentId, record.amount]));
+  const shares = Object.fromEntries(contributionRecords.map((record) => [record.agentId, record.finalShare]));
+
+  const bonusPoolUsed = roundTo(
+    input.budgetTotal *
+      sum(
+        rawRecords.map(
+          (record) =>
+            Math.max(record.peerAdjustment, 0) + Math.max(record.taskWeightAdjustment, 0)
+        )
+      )
+  );
+  const malusPoolReclaimed = roundTo(
+    input.budgetTotal *
+      sum(
+        rawRecords.map(
+          (record) =>
+            Math.abs(Math.min(record.requesterAdjustment, 0)) +
+            Math.abs(Math.min(record.taskWeightAdjustment, 0))
+        )
+      )
+  );
 
   return {
     allocations,
     shares,
     contributionRecords,
+    bonusPoolUsed,
+    malusPoolReclaimed,
     computationLog: {
-      discretionaryPoolAmount: roundTo(discretionaryPoolAmount),
+      bonusPoolAmount: roundTo(bonusPoolAmount),
+      malusPoolAmount: roundTo(malusPoolAmount),
       totalAcceptedWeight: roundTo(totalAcceptedWeight)
     }
   };

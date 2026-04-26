@@ -13,9 +13,13 @@ describe("settlement math", () => {
         { taskId: "t1", assignedTo: "architect", weight: 20 },
         { taskId: "t2", assignedTo: "builder", weight: 80 }
       ],
-      peerRatings: [{ targetId: "builder", signal: 1 }],
+      peerRatings: [
+        { raterId: "architect", targetId: "builder", signal: 1 },
+        { raterId: "requester", targetId: "builder", signal: 1 }
+      ],
       requesterRatings: [{ targetId: "builder", rating: 9 }],
-      discretionaryPoolPct: 0.1
+      bonusPoolPct: 0.1,
+      malusPoolPct: 0.05
     });
 
     expect(result.allocations.builder).toBeGreaterThan(result.allocations.architect);
@@ -33,7 +37,8 @@ describe("settlement math", () => {
       acceptedTasks: [],
       peerRatings: [],
       requesterRatings: [],
-      discretionaryPoolPct: 0.1
+      bonusPoolPct: 0.1,
+      malusPoolPct: 0.05
     });
 
     expect(result.allocations.agentA).toBe(0);
@@ -52,11 +57,14 @@ describe("settlement math", () => {
         { taskId: "t2", assignedTo: "b", weight: 50 }
       ],
       peerRatings: [
-        { targetId: "a", signal: 1 },
-        { targetId: "b", signal: 1 }
+        { raterId: "b", targetId: "a", signal: 1 },
+        { raterId: "c", targetId: "a", signal: 1 },
+        { raterId: "a", targetId: "b", signal: 1 },
+        { raterId: "c", targetId: "b", signal: 1 }
       ],
       requesterRatings: [],
-      discretionaryPoolPct: 0.1
+      bonusPoolPct: 0.1,
+      malusPoolPct: 0.05
     });
 
     const shareSum = Object.values(result.shares).reduce((s, v) => s + v, 0);
@@ -76,12 +84,16 @@ describe("settlement math", () => {
         { taskId: "t3", assignedTo: "z", weight: 40 }
       ],
       peerRatings: [
-        { targetId: "x", signal: -1 },
-        { targetId: "y", signal: -1 },
-        { targetId: "z", signal: -1 }
+        { raterId: "y", targetId: "x", signal: -1 },
+        { raterId: "z", targetId: "x", signal: -1 },
+        { raterId: "x", targetId: "y", signal: -1 },
+        { raterId: "z", targetId: "y", signal: -1 },
+        { raterId: "x", targetId: "z", signal: -1 },
+        { raterId: "y", targetId: "z", signal: -1 }
       ],
       requesterRatings: [],
-      discretionaryPoolPct: 0.1
+      bonusPoolPct: 0.1,
+      malusPoolPct: 0.05
     });
 
     const shareSum = Object.values(result.shares).reduce((s, v) => s + v, 0);
@@ -103,12 +115,13 @@ describe("settlement math", () => {
         { taskId: "t2", assignedTo: "b", weight: 50 }
       ],
       peerRatings: [
-        { targetId: "a", signal: 1 },
-        { targetId: "a", signal: 1 },
-        { targetId: "a", signal: 1 }
+        { raterId: "b", targetId: "a", signal: 1 },
+        { raterId: "c", targetId: "a", signal: 1 },
+        { raterId: "d", targetId: "a", signal: 1 }
       ],
       requesterRatings: [],
-      discretionaryPoolPct: 0.1
+      bonusPoolPct: 0.1,
+      malusPoolPct: 0.05
     });
 
     // Before normalize: a_clamped ≤ 0.3 + 0.10 = 0.40

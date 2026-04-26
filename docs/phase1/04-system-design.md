@@ -240,6 +240,8 @@ final_share(agent_i) =
 Implementation notes:
 
 - keep peer and requester adjustments bounded exactly as the Phase 1 rules define
+- clamp positive task-weight reconciliation to at most `bonus_pool_pct * 0.5`
+- clamp negative task-weight reconciliation to at most `malus_pool_pct * 0.5`
 - normalize final shares to 1.0 after all adjustments
 - return unearned budget to the requester reserve when no eligible assignee earned it
 - store all intermediate values for disputes
@@ -324,7 +326,7 @@ No free-form narrative without ledger evidence is accepted.
 | review deadline missed twice | task auto-accepted |
 | settlement quorum missed after extension | route to manual review |
 | panel misses ruling SLA after extension | escalate to manual review and return filing stakes |
-| room execution deadline reached | claim timeouts, cancel open tasks, force settlement entry |
+| room execution deadline reached | cancel incomplete work, preserve already delivered work for review completion, then force settlement proposal once remaining reviewable work resolves |
 
 ## 8. Security, Audit, and Operational Controls
 

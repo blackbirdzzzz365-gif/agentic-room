@@ -141,7 +141,8 @@ function createCharterResponses(taskCount: number) {
 
 function draftBase() {
   return {
-    discretionaryPoolPct: 0.05,
+    bonusPoolPct: 0.05,
+    malusPoolPct: 0.02,
     baselineSplit: { "agent-1": 0.5, "agent-2": 0.5 } as Record<string, number>,
     consensusConfig: { settlementQuorumRatio: 0.6, settlementAcceptRatio: 0.666 },
     timeoutRules: {

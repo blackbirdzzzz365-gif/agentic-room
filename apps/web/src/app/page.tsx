@@ -9,25 +9,16 @@ import {
 } from "lucide-react";
 
 import { fetchJson } from "@/lib/api";
-import type { AdminRoom, Job, AdminDispute, Metrics } from "@/types";
+import {
+  normalizeAdminDisputes,
+  normalizeAdminRooms,
+  normalizeJobs,
+  normalizeMetrics,
+} from "@/lib/admin-adapters";
 import KpiCard from "@/components/shared/kpi-card";
 import TokenText from "@/components/shared/token-text";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-
-// ─── Data ─────────────────────────────────────────────────────────────────────
-
-interface AdminRoomsPayload {
-  rooms: AdminRoom[];
-}
-
-interface AdminJobsPayload {
-  jobs: Job[];
-}
-
-interface AdminDisputesPayload {
-  disputes: AdminDispute[];
-}
 
 // ─── Feature config ───────────────────────────────────────────────────────────
 
@@ -70,17 +61,23 @@ const FEATURE_CARDS = [
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default async function HomePage() {
-  const [roomsPayload, jobsPayload, disputesPayload, metrics] =
+  const [roomsPayload, jobsPayload, disputesPayload, metricsPayload] =
     await Promise.all([
-      fetchJson<AdminRoomsPayload>("/api/admin/rooms"),
-      fetchJson<AdminJobsPayload>("/api/admin/jobs"),
-      fetchJson<AdminDisputesPayload>("/api/admin/disputes"),
-      fetchJson<Metrics>("/api/admin/metrics"),
+      fetchJson<unknown>("/api/admin/rooms"),
+      fetchJson<unknown>("/api/admin/jobs"),
+      fetchJson<unknown>("/api/admin/disputes"),
+      fetchJson<unknown>("/api/admin/metrics"),
     ]);
 
-  const rooms = roomsPayload?.rooms ?? [];
-  const jobs = jobsPayload?.jobs ?? [];
-  const disputes = disputesPayload?.disputes ?? [];
+  const rooms = normalizeAdminRooms(roomsPayload);
+  const jobs = normalizeJobs(jobsPayload);
+  const disputes = normalizeAdminDisputes(disputesPayload);
+  const metrics = normalizeMetrics(metricsPayload);
+  const hasLoadFailure =
+    roomsPayload === null ||
+    jobsPayload === null ||
+    disputesPayload === null ||
+    metricsPayload === null;
 
   const activeRooms = rooms.filter((r) => r.status === "ACTIVE").length;
   const pendingJobs = jobs.filter((j) => j.status !== "DONE").length;
@@ -122,6 +119,11 @@ export default async function HomePage() {
 
       {/* ── KPI Row ──────────────────────────────────────────────────────── */}
       <section className="mx-auto max-w-6xl px-6 py-10">
+        {hasLoadFailure && (
+          <div className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
+            Some operational data could not be loaded. KPI cards below may be partial.
+          </div>
+        )}
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
           <KpiCard
             title="Active Rooms"

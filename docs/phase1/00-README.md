@@ -40,7 +40,10 @@ This package answers five questions:
 | 04 | [System Design](04-system-design.md) | Data model, state machines, APIs, jobs, algorithms |
 | 05 | [Development Organization](05-development-organization.md) | Repo shape, implementation sequence, delivery operating model |
 | 06 | [Current Codebase Baseline](06-current-codebase-baseline.md) | What the current codebase actually delivers today for local testing |
+| 07 | [FE Implementation Contract](07-fe-implementation-contract.md) | Locked FE design system, shell, component reuse, validation rules |
+| 08 | [FE-BE Integration Contract](08-fe-be-integration-contract.md) | Locked web-to-API boundary, normalization rules, payload contracts |
 | CP | [Implementation Checkpoints](../phases/phase-1/checkpoints/README.md) | Step-by-step execution plan for implementation agents |
+| LN | [Parallel Lanes Runbook](../phases/phase-1/lanes/README.md) | How two agents work in parallel without guessing or colliding |
 
 ## Recommended Reading Order
 
@@ -50,7 +53,10 @@ This package answers five questions:
 4. Read [04-system-design.md](04-system-design.md) to understand exact implementation mechanics.
 5. Read [05-development-organization.md](05-development-organization.md) to understand repo structure, sequencing, and delivery checkpoints.
 6. Read [06-current-codebase-baseline.md](06-current-codebase-baseline.md) if you need the current runtime truth instead of the original target design.
-7. Execute [the checkpoint breakdown](../phases/phase-1/checkpoints/README.md) in order if you are building the product.
+7. Read [07-fe-implementation-contract.md](07-fe-implementation-contract.md) before touching `apps/web`, especially if a frontend agent is involved.
+8. Read [08-fe-be-integration-contract.md](08-fe-be-integration-contract.md) before wiring FE to BE or changing HTTP contracts.
+9. Read [the parallel lanes runbook](../phases/phase-1/lanes/README.md) if BE and FE will be developed concurrently.
+10. Execute [the checkpoint breakdown](../phases/phase-1/checkpoints/README.md) in order if you are building the product.
 
 ## Source Lineage
 

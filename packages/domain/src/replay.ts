@@ -284,7 +284,7 @@ export function replayRoomEvents(events: RoomEvent[]): RoomProjection {
           subType: String(event.payload.subType ?? "")
         };
         if (event.eventType === "DISPUTE_PANELED") {
-          current.status = "PANEL_ASSIGNED";
+          current.status = "UNDER_REVIEW";
         } else if (event.eventType === "DISPUTE_RESOLVED") {
           current.status = "RESOLVED";
         } else if (event.eventType === "DISPUTE_ESCALATED") {
@@ -294,7 +294,14 @@ export function replayRoomEvents(events: RoomEvent[]): RoomProjection {
           current.status = "COOLING_OFF";
         }
         state.disputes[disputeId] = current;
-        state.status = current.status === "RESOLVED" ? state.status : "DISPUTED";
+        if (event.eventType === "DISPUTE_RESOLVED") {
+          const nextRoomStatus = event.payload.nextRoomStatus as RoomStatus | null | undefined;
+          const nextRoomPhase = event.payload.nextRoomPhase as string | null | undefined;
+          state.status = nextRoomStatus ?? (state.settlement ? "IN_SETTLEMENT" : "ACTIVE");
+          state.phase = nextRoomPhase ?? (state.status === "IN_SETTLEMENT" ? "4" : "2");
+        } else {
+          state.status = "DISPUTED";
+        }
         break;
       }
       case "ROOM_FAILED": {

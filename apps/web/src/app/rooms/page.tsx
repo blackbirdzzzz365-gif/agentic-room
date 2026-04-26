@@ -2,22 +2,17 @@ import Link from "next/link";
 import { Users2 } from "lucide-react";
 
 import { fetchJson } from "@/lib/api";
-import type { RoomSummary } from "@/types";
+import { normalizeRoomSummaryList } from "@/lib/room-adapters";
 import RoomCard from "@/components/shared/room-card";
 import EmptyState from "@/components/shared/empty-state";
 import { Button } from "@/components/ui/button";
 
-// ─── Data ─────────────────────────────────────────────────────────────────────
-
-interface RoomsPayload {
-  rooms: RoomSummary[];
-}
-
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default async function RoomsPage() {
-  const payload = await fetchJson<RoomsPayload>("/api/rooms");
-  const rooms = payload?.rooms ?? [];
+  const payload = await fetchJson<unknown>("/api/rooms");
+  const rooms = normalizeRoomSummaryList(payload);
+  const hasLoadFailure = payload === null;
 
   const activeCount = rooms.filter((r) => r.status === "ACTIVE").length;
   const settledCount = rooms.filter((r) => r.status === "SETTLED").length;
@@ -72,7 +67,20 @@ export default async function RoomsPage() {
         )}
 
         {/* ── Content ────────────────────────────────────────────────────── */}
-        {rooms.length === 0 ? (
+        {hasLoadFailure && rooms.length === 0 ? (
+          <div className="rounded-2xl border border-border/50 bg-card/60">
+            <EmptyState
+              icon={<Users2 />}
+              title="Rooms are unavailable"
+              description="The room list could not be loaded from the API. Check the local stack and try again."
+              action={
+                <Button asChild variant="outline">
+                  <Link href="/">Back Home</Link>
+                </Button>
+              }
+            />
+          </div>
+        ) : rooms.length === 0 ? (
           <div className="rounded-2xl border border-border/50 bg-card/60">
             <EmptyState
               icon={<Users2 />}
@@ -86,15 +94,22 @@ export default async function RoomsPage() {
             />
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {rooms.map((room) => (
-              <RoomCard
-                key={room.id}
-                room={room}
-                href={`/rooms/${room.id}`}
-              />
-            ))}
-          </div>
+          <>
+            {hasLoadFailure && (
+              <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
+                Room data may be stale because the last refresh failed.
+              </div>
+            )}
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {rooms.map((room) => (
+                <RoomCard
+                  key={room.id}
+                  room={room}
+                  href={`/rooms/${room.id}`}
+                />
+              ))}
+            </div>
+          </>
         )}
       </div>
     </main>

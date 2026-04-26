@@ -150,13 +150,14 @@ describe("T-03: Panel assignment < 3 eligible members", () => {
   beforeEach(() => vi.mocked(getDbPool).mockReset());
 
   // assignDisputePanel query sequence:
-  // BEGIN · loadDisputes · loadLatestCharter · loadMembers ·
+  // BEGIN · assertCoordinatorOrAdmin(loadRoom) · loadDisputes · loadLatestCharter · loadMembers ·
   // DELETE dispute_panel_members · (INSERT panel member) × panelCount ·
   // UPDATE dispute_cases · appendRoomEvent(SELECT) · appendRoomEvent(INSERT) ·
   // enqueueJob · COMMIT
   function panelResponses(allMembers: ReturnType<typeof makeMemberRow>[], panelCount: number) {
     return [
       { rows: [] },                                  // BEGIN
+      { rows: [ROOM_ROW] },                          // assertCoordinatorOrAdmin(loadRoom)
       { rows: [makeDisputeRow("OPEN")] },            // loadDisputes
       { rows: [CHARTER_ROW] },                       // loadLatestCharter
       { rows: allMembers },                          // loadMembers

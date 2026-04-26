@@ -70,9 +70,16 @@ export default function CreateRoomPage() {
   const onSubmit = async (values: CreateRoomFormValues) => {
     setIsSubmitting(true);
     try {
+      const executionDeadlineAt = new Date(
+        `${values.executionDeadlineAt}T00:00:00`
+      ).toISOString();
+
       const { data, error } = await mutateJson<CreateRoomResponse>(
         "/api/rooms",
-        values,
+        {
+          ...values,
+          executionDeadlineAt,
+        },
         "POST"
       );
 
@@ -86,7 +93,7 @@ export default function CreateRoomPage() {
       toast.success("Room created", {
         description: `"${data.name}" is ready for mission intake.`,
       });
-      router.push("/rooms");
+      router.push(`/rooms/${data.id}`);
     } finally {
       setIsSubmitting(false);
     }

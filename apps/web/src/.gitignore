@@ -1,0 +1,7 @@
+!lib/
+lib/*
+!lib/api.ts
+!lib/admin-adapters.ts
+!lib/room-adapters.ts
+!lib/room-adapters.test.ts
+!lib/utils.ts
